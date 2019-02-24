@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2013-2018 QaProSoft (http://www.qaprosoft.com).
+ * Copyright 2013-2019 QaProSoft (http://www.qaprosoft.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,6 +38,7 @@ import org.openqa.selenium.support.pagefactory.internal.LocatingElementHandler;
 import com.qaprosoft.carina.core.foundation.webdriver.ai.FindByAI;
 import com.qaprosoft.carina.core.foundation.webdriver.locator.ExtendedElementLocator;
 import com.qaprosoft.carina.core.foundation.webdriver.locator.ExtendedElementLocatorFactory;
+import com.qaprosoft.carina.core.foundation.webdriver.locator.ExtendedFindBy;
 import com.qaprosoft.carina.core.foundation.webdriver.locator.LocalizedAnnotations;
 import com.qaprosoft.carina.core.foundation.webdriver.locator.internal.AbstractUIObjectListHandler;
 import com.qaprosoft.carina.core.foundation.webdriver.locator.internal.LocatingElementListHandler;
@@ -56,11 +57,12 @@ public class ExtendedFieldDecorator implements FieldDecorator {
     }
 
     public Object decorate(ClassLoader loader, Field field) {
-        if ((!field.isAnnotationPresent(FindBy.class) && !field.isAnnotationPresent(FindByAI.class)) /*
-                                                                                                      * Enable field decorator logic only in case of
-                                                                                                      * presence the FindBy/FindByAI annotation in the
-                                                                                                      * field
-                                                                                                      */ ||
+        if ((!field.isAnnotationPresent(FindBy.class) && !field.isAnnotationPresent(ExtendedFindBy.class) && !field.isAnnotationPresent(FindByAI.class))
+                /*
+                 * Enable field decorator logic only in case of
+                 * presence the FindBy/FindByCarina/FindByAI annotation in the
+                 * field
+                 */ ||
                 !(ExtendedWebElement.class.isAssignableFrom(field.getType()) || AbstractUIObject.class.isAssignableFrom(field.getType())
                         || isDecoratableList(field)) /*
                                                       * also verify that it is ExtendedWebElement or derived from AbstractUIObject or DecoratableList
@@ -129,7 +131,7 @@ public class ExtendedFieldDecorator implements FieldDecorator {
         WebElement proxy = (WebElement) Proxy.newProxyInstance(loader, new Class[] { WebElement.class, WrapsElement.class, Locatable.class },
                 handler);
         return new ExtendedWebElement(proxy, field.getName(),
-                field.isAnnotationPresent(FindBy.class) ? new LocalizedAnnotations(field).buildBy() : null);
+                field.isAnnotationPresent(FindBy.class) || field.isAnnotationPresent(ExtendedFindBy.class)? new LocalizedAnnotations(field).buildBy() : null);
     }
 
     @SuppressWarnings("unchecked")
@@ -204,14 +206,13 @@ public class ExtendedFieldDecorator implements FieldDecorator {
 			rootBy = (By) byContextField.get(locator);
 
 		} catch (NoSuchFieldException e) {
-			e.printStackTrace();
+		    LOGGER.error("getLocatorBy->NoSuchFieldException failure", e);
 		} catch (IllegalAccessException e) {
-			e.printStackTrace();
+	          LOGGER.error("getLocatorBy->IllegalAccessException failure", e);
 		} catch (ClassCastException e) {
-			e.printStackTrace();
-		} catch (Throwable thr) {
-			thr.printStackTrace();
-			LOGGER.error("Unable to get rootBy via reflection!", thr);
+		    LOGGER.error("getLocatorBy->ClassCastException failure", e);
+		} catch (Exception e) {
+			LOGGER.error("Unable to get rootBy via reflection!", e);
 		}
     	
     	return rootBy;

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2013-2018 QaProSoft (http://www.qaprosoft.com).
+ * Copyright 2013-2019 QaProSoft (http://www.qaprosoft.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,9 +33,9 @@ import com.qaprosoft.carina.core.foundation.utils.android.DeviceTimeZone;
 import com.qaprosoft.carina.core.foundation.webdriver.DriverHelper;
 import com.qaprosoft.carina.core.foundation.webdriver.IDriverPool;
 import com.qaprosoft.carina.core.foundation.webdriver.decorator.ExtendedWebElement;
-import com.qaprosoft.carina.core.foundation.webdriver.device.DevicePool;
 
 import io.appium.java_client.MobileDriver;
+import io.appium.java_client.MultiTouchAction;
 import io.appium.java_client.TouchAction;
 import io.appium.java_client.touch.LongPressOptions;
 import io.appium.java_client.touch.WaitOptions;
@@ -54,6 +54,11 @@ public class MobileUtils {
         HORIZONTAL,
         VERTICAL_DOWN_FIRST,
         HORIZONTAL_RIGHT_FIRST
+    }
+    
+    public enum Zoom{
+        IN,
+        OUT
     }
 
     protected static final long EXPLICIT_TIMEOUT = Configuration.getLong(Parameter.EXPLICIT_TIMEOUT);
@@ -471,7 +476,7 @@ public class MobileUtils {
         double maxCoefficient = 0.6;
 
         // calculate default coefficient based on OS type
-        String os = DevicePool.getDevice().getOs();
+        String os = IDriverPool.getDefaultDevice().getOs();
         if (os.equalsIgnoreCase(SpecialKeywords.ANDROID)) {
             minCoefficient = 0.25;
             maxCoefficient = 0.5;
@@ -654,7 +659,7 @@ public class MobileUtils {
     public static void setDeviceDefaultTimeZoneAndLanguage(boolean returnAppFocus) {
         try {
             String baseApp = "";
-            String os = DevicePool.getDevice().getOs();
+            String os = IDriverPool.getDefaultDevice().getOs();
             if (os.equalsIgnoreCase(SpecialKeywords.ANDROID)) {
 
                 AndroidService androidService = AndroidService.getInstance();
@@ -690,6 +695,56 @@ public class MobileUtils {
             }
         } catch (Exception e) {
             LOGGER.error(e);
+        }
+    }
+    
+    public static void zoom(Zoom type) {
+        LOGGER.info("Zoom will be performed :" + type);
+        MobileDriver<?> driver = (MobileDriver<?>) getDriver();
+        Dimension scrSize = helper.performIgnoreException(() -> driver.manage().window().getSize());
+        int height = scrSize.getHeight();
+        int width = scrSize.getWidth();
+        LOGGER.debug("Screen height : " + height);
+        LOGGER.debug("Screen width : " + width);
+        Point point1 = new Point(width / 2, height / 2 - 30);
+        Point point2 = new Point(width / 2, height / 10 * 3);
+        Point point3 = new Point(width / 2, height / 2 + 30);
+        Point point4 = new Point(width / 2, (7 * height) / 10);
+        switch (type) {
+        case OUT:
+            zoom(point1.getX(), point1.getY(), point2.getX(), point2.getY(), point3.getX(), point3.getY(), point4.getX(), point4.getY(),
+                    DEFAULT_TOUCH_ACTION_DURATION);
+            break;
+        case IN:
+            zoom(point2.getX(), point2.getY(), point1.getX(), point1.getY(), point4.getX(), point4.getY(), point3.getX(), point3.getY(),
+                    DEFAULT_TOUCH_ACTION_DURATION);
+            break;
+        }
+    }
+    
+    public static void zoom(int startx1, int starty1, int endx1, int endy1, int startx2, int starty2, int endx2, int endy2, int duration) {
+        LOGGER.debug(String.format(
+                "Zoom action will be performed with parameters : startX1 : %s ;  startY1: %s ; endX1: %s ; endY1: %s; startX2 : %s ;  startY2: %s ; endX2: %s ; endY2: %s",
+                startx1, starty1, endx1, endy1, startx2, starty2, endx2, endy2));
+        MobileDriver<?> driver = (MobileDriver<?>) getDriver();
+        try {
+            MultiTouchAction multiTouch = new MultiTouchAction(driver);
+            TouchAction<?> tAction0 = new TouchAction(driver);
+            TouchAction<?> tAction1 = new TouchAction(driver);
+            
+            PointOption<?> startPoint1 = PointOption.point(startx1, starty1);
+            PointOption<?> endPoint1 = PointOption.point(endx1 , endy1);
+            PointOption<?> startPoint2 = PointOption.point(startx2, starty2);
+            PointOption<?> endPoint2 = PointOption.point(endx2 , endy2);
+            WaitOptions waitOptions = WaitOptions.waitOptions(Duration.ofMillis(duration));
+
+            tAction0.press(startPoint1).waitAction(waitOptions).moveTo(endPoint1).release();
+            tAction1.press(startPoint2).waitAction(waitOptions).moveTo(endPoint2).release();
+            multiTouch.add(tAction0).add(tAction1);
+            multiTouch.perform(); 
+            LOGGER.info("Zoom has been performed");
+        } catch (Exception e) {
+            LOGGER.error("Error during zooming", e);
         }
     }
 

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2013-2018 QaProSoft (http://www.qaprosoft.com).
+ * Copyright 2013-2019 QaProSoft (http://www.qaprosoft.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,13 @@
  *******************************************************************************/
 package com.qaprosoft.carina.core.foundation.webdriver.decorator;
 
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -41,7 +45,7 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.interactions.Actions;
-import org.openqa.selenium.interactions.internal.Locatable;
+import org.openqa.selenium.interactions.Locatable;
 import org.openqa.selenium.remote.LocalFileDetector;
 import org.openqa.selenium.remote.RemoteWebDriver;
 import org.openqa.selenium.remote.RemoteWebElement;
@@ -66,6 +70,7 @@ import com.qaprosoft.carina.core.foundation.utils.common.CommonUtils;
 import com.qaprosoft.carina.core.foundation.webdriver.IDriverPool;
 import com.qaprosoft.carina.core.foundation.webdriver.listener.DriverListener;
 import com.qaprosoft.carina.core.foundation.webdriver.locator.ExtendedElementLocator;
+import com.sun.jersey.core.util.Base64;
 
 import io.appium.java_client.MobileBy;
 import io.appium.java_client.android.AndroidDriver;
@@ -78,7 +83,7 @@ public class ExtendedWebElement {
 
     private static final long RETRY_TIME = Configuration.getLong(Parameter.RETRY_INTERVAL);
 
-    private static Wait<WebDriver> wait;
+    
     
     // we should keep both properties: driver and searchContext obligatory
     // driver is used for actions, javascripts execution etc
@@ -231,7 +236,7 @@ public class ExtendedWebElement {
 			e.printStackTrace();
 		} catch (Throwable thr) {
 			thr.printStackTrace();
-			LOGGER.error("Unable to get Driver, serachContext and By via reflection!", thr);
+			LOGGER.error("Unable to get Driver, searchContext and By via reflection!", thr);
 		}
 		
     	if (this.searchContext == null) {
@@ -303,7 +308,8 @@ public class ExtendedWebElement {
 		final WebDriver drv = getDriver();
 		
 		Timer.start(ACTION_NAME.WAIT);
-		wait = new WebDriverWait(drv, timeout, RETRY_TIME).ignoring(WebDriverException.class)
+		
+		Wait<WebDriver> wait = new WebDriverWait(drv, timeout, RETRY_TIME).ignoring(WebDriverException.class)
 				.ignoring(NoSuchSessionException.class);
 		// StaleElementReferenceException is handled by selenium ExpectedConditions in many methods
 		try {
@@ -321,6 +327,10 @@ public class ExtendedWebElement {
 			LOGGER.debug("waitUntil: TimeoutException e..." + getNameWithLocator());
 			result = false;
 			originalException = e.getCause();
+		} catch (WebDriverException e) {
+            LOGGER.debug("waitUntil: WebDriverException e..." + getNameWithLocator());
+            result = false;
+            originalException = e.getCause();
 		}
 		catch (Exception e) {
 			LOGGER.error("waitUntil: " + getNameWithLocator(), e);
@@ -354,13 +364,20 @@ public class ExtendedWebElement {
     			//TODO: use-case when format method is used. Need investigate howto init context in this case as well
     			element = searchContext.findElement(by);
     		} else {
+    		    LOGGER.error("refindElement: searchContext is null for " + getNameWithLocator());
     			element = getDriver().findElement(by);	
     		}
 		} catch (StaleElementReferenceException | InvalidElementStateException e) {
 			LOGGER.debug("catched StaleElementReferenceException: ", e);
 			//use available driver to research again...
 			//TODO: handle case with rootBy to be able to refind also lists etc
-    		element = getDriver().findElement(by);
+            if (searchContext != null) {
+                //TODO: use-case when format method is used. Need investigate howto init context in this case as well
+                element = searchContext.findElement(by);
+            } else {
+                LOGGER.error("refindElement: searchContext is null for " + getNameWithLocator());
+                element = getDriver().findElement(by);  
+            }
     	} catch (WebDriverException e) {
     		// that's shouold fix use case when we switch between tabs and corrupt searchContext (mostly for Appium for mobile)
     		element = getDriver().findElement(by);
@@ -397,7 +414,11 @@ public class ExtendedWebElement {
         this.by = by;
     }
 
-    @Override
+	public void setSearchContext(SearchContext searchContext) {
+		this.searchContext = searchContext;
+	}
+
+	@Override
     public String toString() {
         return name;
     }
@@ -793,11 +814,8 @@ public class ExtendedWebElement {
      * @return element existence status.
      */
     public boolean isElementPresent(long timeout) {
-		// perform at once super-fast single selenium call and only if nothing
-		// found move to waitAction
-		//detectElement(); // it should do explicit findElement and reinitialize
-							// internal element member in case of success
-		if (element != null) {
+		// perform at once super-fast single selenium call and only if nothing found move to waitAction
+		if (!isMobile() && element != null) {
 			try {
 				if (element.isDisplayed()) {
 					return true;
@@ -809,30 +827,27 @@ public class ExtendedWebElement {
 
     	ExpectedCondition<?> waitCondition;
     	
-		if (element != null) {
-			waitCondition = ExpectedConditions.and(ExpectedConditions.visibilityOf(element),
-					ExpectedConditions.presenceOfElementLocated(getBy()));
-			boolean tmpResult = waitUntil(waitCondition, 0);
+        // [VD] replace presenceOfElementLocated and visibilityOf conditions by single "visibilityOfElementLocated"
+        // visibilityOf: Does not check for presence of the element as the error explains it.
+        // visibilityOfElementLocated: Checks to see if the element is present and also visible. To check visibility, it makes sure that the element
+        // has a height and width greater than 0.
+    	
+        waitCondition = ExpectedConditions.visibilityOfElementLocated(getBy());
+		boolean tmpResult = waitUntil(waitCondition, 0);
 
-			if (tmpResult) {
-				return true;
-			}
+		if (tmpResult) {
+			return true;
+		}
 
-			if (originalException != null && StaleElementReferenceException.class.equals(originalException.getClass())) {
-				LOGGER.debug("StaleElementReferenceException detected in isElementPresent!");
-				try {
-					refindElement();
-					waitCondition = ExpectedConditions.and(ExpectedConditions.visibilityOf(element),
-							ExpectedConditions.presenceOfElementLocated(getBy()));
-				} catch (NoSuchElementException e) {
-					// search element based on By if exception was thrown
-					waitCondition = ExpectedConditions.and(ExpectedConditions.visibilityOfElementLocated(getBy()),
-							ExpectedConditions.presenceOfElementLocated(getBy()));
-				}
+		if (originalException != null && StaleElementReferenceException.class.equals(originalException.getClass())) {
+			LOGGER.debug("StaleElementReferenceException detected in isElementPresent!");
+			try {
+				element = refindElement();
+                waitCondition = ExpectedConditions.visibilityOf(element);
+			} catch (NoSuchElementException e) {
+				// search element based on By if exception was thrown
+				waitCondition = ExpectedConditions.visibilityOfElementLocated(getBy());
 			}
-		} else {
-			waitCondition = ExpectedConditions.and(ExpectedConditions.visibilityOfElementLocated(getBy()),
-					ExpectedConditions.presenceOfElementLocated(getBy()));
 		}
 
     	return waitUntil(waitCondition, timeout);
@@ -894,8 +909,8 @@ public class ExtendedWebElement {
 		ExpectedCondition<?> waitCondition;
 
 		if (element != null) {
-			waitCondition = ExpectedConditions.or(ExpectedConditions.visibilityOf(element),
-					ExpectedConditions.visibilityOfElementLocated(getBy()));
+			waitCondition = ExpectedConditions.or(ExpectedConditions.visibilityOfElementLocated(getBy()),
+			        ExpectedConditions.visibilityOf(element));
 		} else {
 			waitCondition = ExpectedConditions.visibilityOfElementLocated(getBy());
 		}
@@ -1018,7 +1033,11 @@ public class ExtendedWebElement {
      */
     public ExtendedWebElement findExtendedWebElement(final By by, String name, long timeout) {
         if (isPresent(by, timeout)) {
-        	return new ExtendedWebElement(getElement().findElement(by), name, by);
+			try {
+				return new ExtendedWebElement(getCachedElement().findElement(by), name, by);
+			} catch (StaleElementReferenceException e) {
+				return new ExtendedWebElement(getElement().findElement(by), name, by);
+			}
         } else {
         	throw new NoSuchElementException("Unable to find dynamic element using By: " + by.toString());
         }
@@ -1033,7 +1052,11 @@ public class ExtendedWebElement {
         List<WebElement> webElements = new ArrayList<WebElement>();
         
         if (isPresent(by, timeout)) {
-        	webElements = getElement().findElements(by);
+			try {
+				webElements = getCachedElement().findElements(by);
+			} catch (StaleElementReferenceException e) {
+				webElements = getElement().findElements(by);
+			}
         } else {
         	throw new NoSuchElementException("Unable to find dynamic elements using By: " + by.toString());
         }
@@ -1055,6 +1078,9 @@ public class ExtendedWebElement {
         return extendedWebElements;
     }
 
+    /**
+     * @deprecated As of release 6.x, replaced by {@link #click()}. Can be used only for Web where JavascriptExecutor is supported.
+     */
     @Deprecated
     public void tapWithCoordinates(double x, double y) {
         HashMap<String, Double> tapObject = new HashMap<String, Double>();
@@ -1069,7 +1095,13 @@ public class ExtendedWebElement {
     	try {
         	//TODO: investigate maybe searchContext better to use here!
     		//do direct selenium/appium search without any extra validations
-    		element = getDriver().findElement(by);
+            if (searchContext != null) {
+                //TODO: use-case when format method is used. Need investigate howto init context in this case as well
+                element = searchContext.findElement(by);
+            } else {
+                LOGGER.error("waitUntilElementDisappear: searchContext is null for " + getNameWithLocator());
+                element = getDriver().findElement(by);  
+            }
     	} catch (NoSuchElementException e) {
     		//element not present so means disappear
     		return true;
@@ -1079,9 +1111,9 @@ public class ExtendedWebElement {
     		return true;
     	}
 
-    	
-    	return waitUntil(ExpectedConditions.or(ExpectedConditions.stalenessOf(element),
-				ExpectedConditions.invisibilityOf(element)), timeout);
+        return waitUntil(ExpectedConditions.or(ExpectedConditions.invisibilityOfElementLocated(getBy()),
+                ExpectedConditions.stalenessOf(element),
+                ExpectedConditions.invisibilityOf(element)), timeout);
     }
 
     public ExtendedWebElement format(Object... objects) {
@@ -1132,6 +1164,21 @@ public class ExtendedWebElement {
 
         if (locator.startsWith("By.AccessibilityId: ")) {
             by = MobileBy.AccessibilityId(String.format(StringUtils.remove(locator, "By.AccessibilityId: "), objects));
+        }
+        
+        if (locator.startsWith("By.Image: ")) {
+            String formattedLocator = String.format(StringUtils.remove(locator, "By.Image: "), objects);
+            Path path = Paths.get(formattedLocator);
+            LOGGER.debug("Formatted locator is : " + formattedLocator);
+            String base64image;
+            try {
+                base64image = new String(Base64.encode(Files.readAllBytes(path)));
+            } catch (IOException e) {
+                throw new RuntimeException(
+                        "Error while reading image file after formatting. Formatted locator : " + formattedLocator, e);
+            }
+            LOGGER.debug("Base64 image representation has benn successfully obtained after formatting.");
+            by = MobileBy.image(base64image);
         }
         return new ExtendedWebElement(by, name, getDriver());
     }
@@ -1538,7 +1585,7 @@ public class ExtendedWebElement {
 						Messager.KEYS_NOT_CLEARED_IN_ELEMENT.getMessage(getNameWithLocator()));
 				element.clear();
 
-				String textLog = (decryptedText.equals(text) ? "********" : text);
+				String textLog = (!decryptedText.equals(text) ? "********" : text);
 
 				DriverListener.setMessages(Messager.KEYS_SEND_TO_ELEMENT.getMessage(textLog, getName()),
 						Messager.KEYS_NOT_SEND_TO_ELEMENT.getMessage(textLog, getNameWithLocator()));
@@ -1551,7 +1598,7 @@ public class ExtendedWebElement {
 			public void doAttachFile(String filePath) {
 				final String decryptedText = cryptoTool.decryptByPattern(filePath, CRYPTO_PATTERN);
 
-				String textLog = (decryptedText.equals(filePath) ? "********" : filePath);
+				String textLog = (!decryptedText.equals(filePath) ? "********" : filePath);
 
 				DriverListener.setMessages(Messager.FILE_ATTACHED.getMessage(textLog, getName()),
 						Messager.FILE_NOT_ATTACHED.getMessage(textLog, getNameWithLocator()));
@@ -1784,17 +1831,25 @@ public class ExtendedWebElement {
         return resBy;
     }
     
+/*	private ExpectedCondition<?> getDefaultCondition(By myBy) {
+        // generate the most popular wiatCondition to check if element visible or present
+        return ExpectedConditions.or(ExpectedConditions.presenceOfElementLocated(myBy),
+                ExpectedConditions.visibilityOfElementLocated(myBy));
+    }*/
+
+    // old functionality to remove completely after successfull testing
     private ExpectedCondition<?> getDefaultCondition(By myBy) {
-    	//generate the most popular wiatCondition to check if element visible or present
-    	ExpectedCondition<?> waitCondition = null;
-		if (element != null) {
-			waitCondition = ExpectedConditions.or(ExpectedConditions.visibilityOfElementLocated(myBy),
-					ExpectedConditions.visibilityOf(element), ExpectedConditions.presenceOfElementLocated(myBy));
-		} else {
-			waitCondition = ExpectedConditions.or(ExpectedConditions.visibilityOfElementLocated(myBy),
-					ExpectedConditions.presenceOfElementLocated(myBy));
-		}
-		
-		return waitCondition;
+        // generate the most popular wiatCondition to check if element visible or present
+        ExpectedCondition<?> waitCondition = null;
+        if (element != null) {
+            waitCondition = ExpectedConditions.or(ExpectedConditions.presenceOfElementLocated(myBy),
+                    ExpectedConditions.visibilityOfElementLocated(myBy),
+                    ExpectedConditions.visibilityOf(element));
+        } else {
+            waitCondition = ExpectedConditions.or(ExpectedConditions.presenceOfElementLocated(myBy),
+                    ExpectedConditions.visibilityOfElementLocated(myBy));
+        }
+
+        return waitCondition;
     }
 }

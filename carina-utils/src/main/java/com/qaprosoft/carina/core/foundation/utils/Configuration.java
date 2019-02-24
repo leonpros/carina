@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2013-2018 QaProSoft (http://www.qaprosoft.com).
+ * Copyright 2013-2019 QaProSoft (http://www.qaprosoft.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -79,8 +79,6 @@ public class Configuration {
         MAX_DRIVER_COUNT("max_driver_count"),
 
         CUSTOM_CAPABILITIES("custom_capabilities"),
-
-        EXTRA_CAPABILITIES("extra_capabilities"),
 
         APP_VERSION("app_version"),
 
@@ -164,6 +162,8 @@ public class Configuration {
         CORE_LOG_LEVEL("core_log_level"),
         
         CORE_LOG_PACKAGES("core_log_packages"),
+        
+        ARTIFACTS_EXPIRATION_SECONDS("artifacts_expiration_seconds"),
 
         LOG_ALL_JSON("log_all_json"),
 
@@ -249,7 +249,26 @@ public class Configuration {
 
         DEFAULT_DEVICE_TIME_FORMAT("default_device_time_format"),
 
-        DEFAULT_DEVICE_LANGUAGE("default_device_language");
+        DEFAULT_DEVICE_LANGUAGE("default_device_language"),
+        
+        //For screen recording
+        ANDROID_SCREEN_RECORDING_SIZE("android_screen_record_size"),
+        
+        ANDROID_SCREEN_RECORDING_BITRATE("android_screen_record_bitrate"),
+        
+        ANDROID_ENABLE_BUG_REPORT("android_enable_bug_report"),
+        
+        IOS_SCREEN_RECORDING_QUALITY("ios_screen_record_quality"),
+        
+        IOS_SCREEN_RECORDING_CODEC("ios_screen_record_codec"),
+        
+        IOS_SCREEN_RECORDING_FPS("ios_screen_record_fps"),
+        
+        SCREEN_RECORD_DURATION("screen_record_duration"),
+
+        // Test Execution Filter rules
+        TEST_RUN_RULES("test_run_rules");
+
 
         private final String key;
 
@@ -309,12 +328,12 @@ public class Configuration {
         asString.append("\n============= Test configuration =============\n");
         for (Parameter param : Parameter.values()) {
             if (!Parameter.CRYPTO_KEY_PATH.equals(param)) {
-                asString.append(String.format("%s=%s\n", param.getKey(), Configuration.get(param)));
+                asString.append(String.format("%s=%s%n", param.getKey(), Configuration.get(param)));
             }
         }
 
         //write into the log extra information about selenium_host together with capabilities
-        asString.append(String.format("%s=%s\n", "selenium_host", R.CONFIG.get("selenium_host")));
+        asString.append(String.format("%s=%s%n", "selenium_host", R.CONFIG.get("selenium_host")));
         asString.append("\n------------- Driver capabilities -----------\n");
         // read all properties from config.properties and use "capabilities.*"
         final String prefix = SpecialKeywords.CAPABILITIES + ".";
@@ -322,7 +341,7 @@ public class Configuration {
         Map<String, String> capabilitiesMap = new HashMap(R.CONFIG.getProperties());
         for (Map.Entry<String, String> entry : capabilitiesMap.entrySet()) {
             if (entry.getKey().toLowerCase().startsWith(prefix)) {
-                asString.append(String.format("%s=%s\n", entry.getKey(), R.CONFIG.get(entry.getKey())));
+                asString.append(String.format("%s=%s%n", entry.getKey(), R.CONFIG.get(entry.getKey())));
             }
         }
 

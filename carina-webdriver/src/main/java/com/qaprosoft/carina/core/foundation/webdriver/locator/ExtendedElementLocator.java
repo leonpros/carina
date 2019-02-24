@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2013-2018 QaProSoft (http://www.qaprosoft.com).
+ * Copyright 2013-2019 QaProSoft (http://www.qaprosoft.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,7 +71,7 @@ public class ExtendedElementLocator implements ElementLocator {
     public ExtendedElementLocator(SearchContext searchContext, Field field) {
         this.searchContext = searchContext;
 
-        if (field.isAnnotationPresent(FindBy.class)) {
+        if (field.isAnnotationPresent(FindBy.class) || field.isAnnotationPresent(ExtendedFindBy.class)) {
             LocalizedAnnotations annotations = new LocalizedAnnotations(field);
             this.shouldCache = true;
             this.caseInsensitive = false;

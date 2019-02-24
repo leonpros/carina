@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2013-2018 QaProSoft (http://www.qaprosoft.com).
+ * Copyright 2013-2019 QaProSoft (http://www.qaprosoft.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -91,9 +91,10 @@ public class MobileRemoteProxy extends DefaultRemoteProxy {
         }
         
         if (!StringUtils.isEmpty(udid)) {
-        	// this is our mobile Android or iOS device
-        	session.getRequestedCapabilities().put("slotCapabilities", getSlotCapabilities(session, udid));
+            	// this is our mobile Android or iOS device
+            	session.getRequestedCapabilities().put("slotCapabilities", getSlotCapabilities(session, udid));
         }
+        
     }
 
     @Override

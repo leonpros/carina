@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright 2013-2018 QaProSoft (http://www.qaprosoft.com).
+ * Copyright 2013-2019 QaProSoft (http://www.qaprosoft.com).
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,14 +23,15 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.mockito.Mock;
 import org.openqa.selenium.WebDriver;
 import org.testng.Assert;
-import org.testng.annotations.AfterSuite;
 import org.testng.annotations.BeforeSuite;
 import org.testng.annotations.Test;
 
+import com.qaprosoft.carina.core.foundation.exception.DriverPoolException;
 import com.qaprosoft.carina.core.foundation.utils.Configuration;
 import com.qaprosoft.carina.core.foundation.utils.Configuration.Parameter;
 import com.qaprosoft.carina.core.foundation.utils.R;
 import com.qaprosoft.carina.core.foundation.webdriver.TestPhase.Phase;
+import com.qaprosoft.carina.core.foundation.webdriver.device.Device;
 
 public class DriverPoolTest implements IDriverPool {
 
@@ -55,6 +56,7 @@ public class DriverPoolTest implements IDriverPool {
 
     @BeforeSuite(alwaysRun = true)
     public void beforeSuite() {
+        TestPhase.setActivePhase(Phase.BEFORE_SUITE);
         R.CONFIG.put("driver_type", "desktop");
         R.CONFIG.put("thread_count", "1");
         R.CONFIG.put("data_provider_thread_count", "1");
@@ -75,6 +77,8 @@ public class DriverPoolTest implements IDriverPool {
     public void beforeClassGetSuiteDriver() {
         TestPhase.setActivePhase(Phase.BEFORE_CLASS);
         Assert.assertEquals(getDriver(BEFORE_SUITE_DRIVER_NAME), mockDriverSuite, "Incorrect driver has been returned");
+        Assert.assertTrue(getDrivers().containsKey(BEFORE_SUITE_DRIVER_NAME), "Before suite driver has not been returned by getDrivers()");
+        Assert.assertTrue(IDriverPool.getStaticDrivers().containsKey(BEFORE_SUITE_DRIVER_NAME), "Before suite driver has not been returned by getStaticDrivers()");
     }
 
     @Test(dependsOnMethods = { "beforeClassGetSuiteDriver" })
@@ -92,7 +96,7 @@ public class DriverPoolTest implements IDriverPool {
     @Test(dependsOnMethods = { "methodGetSuiteDriver" })
     public void quiteSuiteDriver() {
         deregisterDriver(mockDriverSuite);
-        Assert.assertEquals(0, getDriversCount(), "Number of registered driver is not valid!");
+        Assert.assertEquals(getDriversCount(), 0, "Number of registered driver is not valid!");
     }
 
     @Test(dependsOnMethods = { "quiteSuiteDriver" })
@@ -100,11 +104,19 @@ public class DriverPoolTest implements IDriverPool {
         R.CONFIG.put("max_driver_count", "2");
 
         registerDriver(mockDriverDefault, IDriverPool.DEFAULT);
-        Assert.assertEquals(1, getDriversCount(), "Number of registered driver is not valid!");
+        Assert.assertEquals(getDriversCount(), 1, "Number of registered driver is not valid!");
         Assert.assertTrue(isDriverRegistered(IDriverPool.DEFAULT), "Default driver is not registered!");
 
-        Assert.assertEquals(mockDriverDefault, getDriver(), "Returned driver is not the same as registered!");
+        Assert.assertEquals(getDriver(), mockDriverDefault, "Returned driver is not the same as registered!");
     }
+    
+    @SuppressWarnings("deprecation")
+    @Test(dependsOnMethods = { "registerDefaultDriver" })
+    public void testStaticMethods() {
+        Assert.assertEquals(size(), 1, "Number of registered driver is not valid!");
+        Assert.assertEquals(IDriverPool.getDefaultDriver(), mockDriverDefault, "Returned driver is not the same as registered!");
+    }
+    
 
     @Test(dependsOnMethods = "registerDefaultDriver", expectedExceptions = {
             AssertionError.class }, expectedExceptionsMessageRegExp = "Driver 'default' is already registered for thread: 1")
@@ -114,24 +126,51 @@ public class DriverPoolTest implements IDriverPool {
 
     @Test(dependsOnMethods = { "registerDefaultDriver", "registerTwiceDefaultDriver" })
     public void deregisterDefaultDriver() {
+        quitDriver();
         deregisterDriver(mockDriverDefault);
         Assert.assertFalse(isDriverRegistered(IDriverPool.DEFAULT), "Default driver is not deregistered!");
         LOGGER.info("drivers count: " + getDriversCount());
-        Assert.assertEquals(0, getDriversCount(), "Number of registered driver is not valid!");
+        Assert.assertEquals(getDriversCount(), 0, "Number of registered driver is not valid!");
     }
 
     @Test(dependsOnMethods = { "deregisterDefaultDriver" })
+    public void quitDriverByPhase() {
+        TestPhase.setActivePhase(Phase.BEFORE_METHOD);
+        registerDriver(mockDriverDefault, IDriverPool.DEFAULT);
+        Assert.assertEquals(getDriversCount(), 1, "Number of registered driver is not valid!");
+        quitDrivers(Phase.BEFORE_METHOD);
+        Assert.assertEquals(getDriversCount(), 0, "Number of registered driver is not valid!");
+    }
+    
+    @Test(dependsOnMethods = { "quitDriverByPhase" })
+    public void quitDefaultDriver() {
+        TestPhase.setActivePhase(Phase.METHOD);
+        registerDriver(mockDriverDefault, IDriverPool.DEFAULT);
+        Assert.assertEquals(getDriversCount(), 1, "Number of registered driver is not valid!");
+        quitDriver();
+        Assert.assertEquals(getDriversCount(), 0, "Number of registered driver is not valid!");
+    }
+    
+    @Test(dependsOnMethods = { "quitDefaultDriver" })
+    public void quitDriverByName() {
+        TestPhase.setActivePhase(Phase.METHOD);
+        registerDriver(mockDriverDefault, IDriverPool.DEFAULT);
+        Assert.assertEquals(1, getDriversCount(), "Number of registered driver is not valid!");
+        quitDriver(IDriverPool.DEFAULT);
+        Assert.assertEquals(0, getDriversCount(), "Number of registered driver is not valid!");
+    }
+    
+    @Test(dependsOnMethods = { "quitDriverByName" })
     public void registerCustom1Driver() {
         registerDriver(mockDriverCustom1, CUSTOM1);
         Assert.assertTrue(isDriverRegistered(CUSTOM1), "Custom1 driver is not registered!");
-        Assert.assertEquals(1, getDriversCount(), "Number of registered driver is not valid!");
+        Assert.assertEquals(getDriversCount(), 1, "Number of registered driver is not valid!");
 
     }
 
     @Test(dependsOnMethods = "registerCustom1Driver")
     public void getCustom1Driver() {
-        WebDriver driver = getDriver(CUSTOM1);
-        Assert.assertEquals(mockDriverCustom1, driver, "Returned driver is not the same as registered!");
+        Assert.assertEquals(getDriver(CUSTOM1), mockDriverCustom1, "Returned driver is not the same as registered!");
     }
 
     @Test(dependsOnMethods = "getCustom1Driver", expectedExceptions = {
@@ -142,32 +181,50 @@ public class DriverPoolTest implements IDriverPool {
         registerDriver(mockDriverCustom2, CUSTOM2);
         Assert.assertFalse(isDriverRegistered(CUSTOM2),
                 CUSTOM2 + " driver is registered in spite of the max_drivercount=2");
-        Assert.assertEquals(2, getDriversCount(), "Number of registered driver is not valid!");
+        Assert.assertEquals(getDriversCount(), 2, "Number of registered driver is not valid!");
     }
 
     @Test(dependsOnMethods = { "reachMaxDriverCountTest" })
     public void deregisterCustom1Driver() {
         deregisterDriver(mockDriverCustom1);
         Assert.assertFalse(isDriverRegistered(CUSTOM1), CUSTOM1 + " driver is not deregistered!");
-        Assert.assertEquals(1, getDriversCount(), "Number of registered driver is not valid!");
+        Assert.assertEquals(getDriversCount(), 1, "Number of registered driver is not valid!");
 
         deregisterDriver(mockDriverDefault);
-        Assert.assertEquals(0, getDriversCount(), "Number of registered driver is not valid!");
+        Assert.assertEquals(getDriversCount(), 0, "Number of registered driver is not valid!");
     }
 
     @Test(dependsOnMethods = { "deregisterCustom1Driver" })
     public void deregisterAllDrivers() {
         registerDriver(mockDriverDefault, IDriverPool.DEFAULT);
-        Assert.assertEquals(1, getDriversCount(), "Number of registered driver is not valid!");
+        Assert.assertEquals(getDriversCount(), 1, "Number of registered driver is not valid!");
         registerDriver(mockDriverCustom1, CUSTOM1);
-        Assert.assertEquals(2, getDriversCount(), "Number of registered driver is not valid!");
+        Assert.assertEquals(getDriversCount(), 2, "Number of registered driver is not valid!");
+        
+        quitDrivers(Phase.ALL);
+        Assert.assertEquals(getDriversCount(), 0, "Number of registered driver is not valid!");
+    }
+    
+    @Test(dependsOnMethods = { "deregisterAllDrivers" })
+    public void registerDriverWithDevice() {
+        WebDriver deviceDriver = mock(WebDriver.class);
+        Device device = new Device("name", "type", "os", "osVersion", "udid", "remoteUrl");
+        registerDriver(deviceDriver, IDriverPool.DEFAULT, device);
+        Assert.assertEquals(getDriversCount(), 1, "Number of registered driver is not valid!");
+        
+        Assert.assertEquals(getDriver(), deviceDriver, "Returned driver is not the same as registered!");
+        Assert.assertEquals(getDevice(), device, "Returned device is not the same as registered!");
+        quitDrivers(Phase.ALL);
+    }
+    
+    @SuppressWarnings("deprecation")
+    @Test(dependsOnMethods = { "registerDriverWithDevice" }, expectedExceptions = {
+            DriverPoolException.class }, expectedExceptionsMessageRegExp = "no default driver detected!")
+    public void getDefaultNotExistedDriver() {
+        IDriverPool.getDefaultDriver();
     }
 
-/*    @AfterSuite()
-    public void afterSuite() {
-        Assert.assertEquals(0, getDriversCount(), "Number of registered driver is not valid!");
-    }
-*/     
+   
     private void changeBeforeSuiteDriverThread() {
         for (CarinaDriver cDriver : driversPool) {
             if (Phase.BEFORE_SUITE.equals(cDriver.getPhase())) {
@@ -182,20 +239,31 @@ public class DriverPoolTest implements IDriverPool {
      * 
      * @param driver
      *            WebDriver
-     * 
      * @param name
      *            String driver name
      * 
      */
     private void registerDriver(WebDriver driver, String name) {
+        registerDriver(driver, name, IDriverPool.getNullDevice());
+    }
+    /**
+     * Register driver in the DriverPool with device
+     * 
+     * @param driver
+     *            WebDriver
+     * @param name
+     *            String driver name
+     * @param device
+     *            Device
+     * 
+     */
+    private void registerDriver(WebDriver driver, String name, Device device) {
         Long threadId = Thread.currentThread().getId();
         ConcurrentHashMap<String, CarinaDriver> currentDrivers = getDrivers();
 
         int maxDriverCount = Configuration.getInt(Parameter.MAX_DRIVER_COUNT);
 
         if (currentDrivers.size() == maxDriverCount) {
-            // TODO: after moving driver creation to DriverPoolEx need to add
-            // such verification before driver start
             Assert.fail("Unable to register driver as you reached max number of drivers per thread: " + maxDriverCount);
         }
         if (currentDrivers.containsKey(name)) {
@@ -203,7 +271,7 @@ public class DriverPoolTest implements IDriverPool {
         }
 
         // new 6.0 approach to manipulate drivers via regular Set
-        CarinaDriver carinaDriver = new CarinaDriver(name, driver, TestPhase.getActivePhase(), threadId);
+        CarinaDriver carinaDriver = new CarinaDriver(name, driver, device, TestPhase.getActivePhase(), threadId);
         driversPool.add(carinaDriver);
     }
 
