@@ -115,12 +115,14 @@ public class Jira {
         }
         if (result.getMethod().getDescription() != null && result.getMethod().getDescription().contains(SpecialKeywords.JIRA_TICKET)) {
             tickets.clear();
-            String description = null;
-            try {
-                description = result.getMethod().getDescription();
-                tickets.add(description.split("#")[1].trim());
-            } catch (Exception e) {
-                LOG.error("Incorrect Jira-ticket format: " + description, e);
+            String description = result.getMethod().getDescription();
+            
+            if (description.split("#").length > 1) {
+	            try {
+	                tickets.add(description.split("#")[1].trim());
+	            } catch (Exception e) {
+	                LOG.error("Incorrect Jira-ticket format: " + description, e);
+	            }
             }
         }
 
@@ -178,7 +180,7 @@ public class Jira {
                     bugId = annotation.id();
                 }
             }
-            if (bugId != null) {
+            if (bugId != null && !Configuration.get(Parameter.JIRA_URL).isEmpty()) {
                 String bugUrl = Configuration.get(Parameter.JIRA_URL) + "/browse/" + bugId;
                 LOG.info("Bug URL retrieved: " + bugUrl);
 
@@ -186,7 +188,8 @@ public class Jira {
                     Issue bug = jira.getIssue(bugId);
                     return String.format("Bug %s \"%s\" with status \"%s\" associated", bugUrl, bug.getSummary(), bug.getStatus().getName());
                 } catch (Exception e) {
-                    LOG.error("Exception during retrieving bug info", e);
+                    LOG.error("Exception during retrieving bug info: " + e.getMessage());
+                    LOG.debug("Exception during retrieving bug info.", e);
                     return null;
                 }
             }

@@ -21,6 +21,7 @@ import org.apache.log4j.Logger;
 import org.openqa.selenium.Dimension;
 import org.openqa.selenium.Point;
 import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.support.events.EventFiringWebDriver;
 import org.testng.Assert;
 
 import com.qaprosoft.carina.core.foundation.commons.SpecialKeywords;
@@ -33,16 +34,20 @@ import com.qaprosoft.carina.core.foundation.webdriver.DriverHelper;
 import com.qaprosoft.carina.core.foundation.webdriver.IDriverPool;
 import com.qaprosoft.carina.core.foundation.webdriver.decorator.ExtendedWebElement;
 
+import io.appium.java_client.AppiumDriver;
 import io.appium.java_client.MobileDriver;
+import io.appium.java_client.android.AndroidDriver;
+import io.appium.java_client.ios.IOSDriver;
 import io.appium.java_client.MultiTouchAction;
 import io.appium.java_client.TouchAction;
+import io.appium.java_client.appmanagement.ApplicationState;
 import io.appium.java_client.touch.LongPressOptions;
 import io.appium.java_client.touch.WaitOptions;
 import io.appium.java_client.touch.offset.ElementOption;
 import io.appium.java_client.touch.offset.PointOption;
 
 public interface IMobileUtils extends IDriverPool {
-    static final Logger LOGGER = Logger.getLogger(IMobileUtils.class);
+    static final Logger UTILS_LOGGER = Logger.getLogger(IMobileUtils.class);
 
     public enum Direction {
         LEFT,
@@ -54,13 +59,13 @@ public interface IMobileUtils extends IDriverPool {
         VERTICAL_DOWN_FIRST,
         HORIZONTAL_RIGHT_FIRST
     }
-    
-    public enum Zoom{
+
+    public enum Zoom {
         IN,
         OUT
     }
 
-    //TODO: [VD] make private after migration to java 9+
+    // TODO: [VD] make private after migration to java 9+
     static final long EXPLICIT_TIMEOUT = Configuration.getLong(Parameter.EXPLICIT_TIMEOUT);
 
     static final int MINIMUM_TIMEOUT = 2;
@@ -68,7 +73,7 @@ public interface IMobileUtils extends IDriverPool {
     static final int DEFAULT_TOUCH_ACTION_DURATION = 1000;
     static final int DEFAULT_MAX_SWIPE_COUNT = 50;
     static final int DEFAULT_MIN_SWIPE_COUNT = 1;
-    
+
     static DriverHelper helper = new DriverHelper();
 
     /**
@@ -78,8 +83,7 @@ public interface IMobileUtils extends IDriverPool {
      */
     default public void tap(ExtendedWebElement element) {
         Point point = element.getLocation();
-        Dimension size = helper.performIgnoreException(() -> element.getSize());
-		
+        Dimension size = element.getSize();
         tap(point.getX() + size.getWidth() / 2, point.getY() + size.getHeight() / 2);
     }
 
@@ -95,22 +99,22 @@ public interface IMobileUtils extends IDriverPool {
 
     /**
      * tap with TouchActions slowly to imitate log tap on element
-     * 
+     *
      * @param elem ExtendedWebElement
      *            element
      */
     default public void longTap(ExtendedWebElement elem) {
-    	Dimension size = helper.performIgnoreException(() -> elem.getSize());
-    	
+        Dimension size = elem.getSize();
+
         int width = size.getWidth();
         int height = size.getHeight();
 
         int x = elem.getLocation().getX() + width / 2;
         int y = elem.getLocation().getY() + height / 2;
         try {
-            MobileUtils.swipe(x, y, x, y, 2500);
+            swipe(x, y, x, y, 2500);
         } catch (Exception e) {
-            LOGGER.error("Exception: " + e);
+            UTILS_LOGGER.error("Exception: " + e);
         }
     }
 
@@ -121,16 +125,16 @@ public interface IMobileUtils extends IDriverPool {
      * @return boolean
      */
     default public boolean longPress(ExtendedWebElement element) {
-    	//TODO: SZ migrate to FluentWaits
+        // TODO: SZ migrate to FluentWaits
         try {
-            WebDriver driver = getDriver();
+            WebDriver driver = castDriver();
             @SuppressWarnings("rawtypes")
-			TouchAction<?> action = new TouchAction((MobileDriver<?>) driver);
+            TouchAction<?> action = new TouchAction((MobileDriver<?>) driver);
             LongPressOptions options = LongPressOptions.longPressOptions().withElement(ElementOption.element(element.getElement()));
             action.longPress(options).release().perform();
             return true;
         } catch (Exception e) {
-            LOGGER.info("Error occurs during longPress: " + e, e);
+            UTILS_LOGGER.info("Error occurs during longPress: " + e, e);
         }
         return false;
     }
@@ -143,10 +147,10 @@ public interface IMobileUtils extends IDriverPool {
      * @param duration int
      */
     default public void tap(int startx, int starty, int duration) {
-        //TODO: add Screenshot.capture()
+        // TODO: add Screenshot.capture()
         try {
             @SuppressWarnings("rawtypes")
-            TouchAction<?> touchAction = new TouchAction((MobileDriver<?>) getDriver());
+            TouchAction<?> touchAction = new TouchAction((MobileDriver<?>) castDriver());
             PointOption<?> startPoint = PointOption.point(startx, starty);
             WaitOptions waitOptions = WaitOptions.waitOptions(Duration.ofMillis(duration));
 
@@ -165,7 +169,7 @@ public interface IMobileUtils extends IDriverPool {
 
     /**
      * swipe till element using TouchActions
-     * 
+     *
      * @param element ExtendedWebElement
      * @return boolean
      */
@@ -175,7 +179,7 @@ public interface IMobileUtils extends IDriverPool {
 
     /**
      * swipe till element using TouchActions
-     * 
+     *
      * @param element ExtendedWebElement
      * @param count int
      * @return boolean
@@ -186,7 +190,7 @@ public interface IMobileUtils extends IDriverPool {
 
     /**
      * swipe till element using TouchActions
-     * 
+     *
      * @param element ExtendedWebElement
      * @param direction Direction
      * @return boolean
@@ -197,7 +201,7 @@ public interface IMobileUtils extends IDriverPool {
 
     /**
      * swipe till element using TouchActions
-     * 
+     *
      * @param element ExtendedWebElement
      * @param count int
      * @param duration int
@@ -209,7 +213,7 @@ public interface IMobileUtils extends IDriverPool {
 
     /**
      * swipe till element using TouchActions
-     * 
+     *
      * @param element ExtendedWebElement
      * @param direction Direction
      * @param count int
@@ -313,10 +317,10 @@ public interface IMobileUtils extends IDriverPool {
         boolean isVisible = element.isVisible(1);
         if (isVisible) {
             // no sense to continue;
-            LOGGER.info("element already present before swipe: " + element.getNameWithLocator().toString());
+            UTILS_LOGGER.info("element already present before swipe: " + element.getNameWithLocator().toString());
             return true;
         } else {
-        	LOGGER.info("swiping to element: " + element.getNameWithLocator().toString());
+            UTILS_LOGGER.info("swiping to element: " + element.getNameWithLocator().toString());
         }
 
         Direction oppositeDirection = Direction.DOWN;
@@ -362,23 +366,23 @@ public interface IMobileUtils extends IDriverPool {
         int currentCount = count;
 
         while (!isVisible && currentCount-- > 0) {
-            LOGGER.debug("Element not present! Swipe " + direction + " will be executed to element: " + element.getNameWithLocator().toString());
+            UTILS_LOGGER.debug("Element not present! Swipe " + direction + " will be executed to element: " + element.getNameWithLocator().toString());
             swipeInContainer(container, direction, duration);
 
-            LOGGER.info("Swipe was executed. Attempts remain: " + currentCount);
+            UTILS_LOGGER.info("Swipe was executed. Attempts remain: " + currentCount);
             isVisible = element.isVisible(1);
         }
 
         currentCount = count;
         while (bothDirections && !isVisible && currentCount-- > 0) {
-            LOGGER.debug(
+            UTILS_LOGGER.debug(
                     "Element not present! Swipe " + oppositeDirection + " will be executed to element: " + element.getNameWithLocator().toString());
             swipeInContainer(container, oppositeDirection, duration);
-            LOGGER.info("Swipe was executed. Attempts remain: " + currentCount);
+            UTILS_LOGGER.info("Swipe was executed. Attempts remain: " + currentCount);
             isVisible = element.isVisible(1);
         }
 
-        LOGGER.info("Result: " + isVisible);
+        UTILS_LOGGER.info("Result: " + isVisible);
         return isVisible;
     }
 
@@ -392,39 +396,39 @@ public interface IMobileUtils extends IDriverPool {
      * @param duration int Millis
      */
     @SuppressWarnings("rawtypes")
-	default public void swipe(int startx, int starty, int endx, int endy, int duration) {
-        LOGGER.debug("Starting swipe...");
-        WebDriver drv = getDriver();
+    default public void swipe(int startx, int starty, int endx, int endy, int duration) {
+        UTILS_LOGGER.debug("Starting swipe...");
+        WebDriver drv = castDriver();
 
-        LOGGER.debug("Getting driver dimension size...");
-        Dimension scrSize = helper.performIgnoreException(() -> drv.manage().window().getSize());
-        LOGGER.debug("Finished driver dimension size...");
+        UTILS_LOGGER.debug("Getting driver dimension size...");
+        Dimension scrSize = drv.manage().window().getSize();
+        UTILS_LOGGER.debug("Finished driver dimension size...");
         // explicitly limit range of coordinates
         if (endx >= scrSize.width) {
-            LOGGER.warn("endx coordinate is bigger then device width! It will be limited!");
+            UTILS_LOGGER.warn("endx coordinate is bigger then device width! It will be limited!");
             endx = scrSize.width - 1;
         } else {
             endx = Math.max(1, endx);
         }
 
         if (endy >= scrSize.height) {
-            LOGGER.warn("endy coordinate is bigger then device height! It will be limited!");
+            UTILS_LOGGER.warn("endy coordinate is bigger then device height! It will be limited!");
             endy = scrSize.height - 1;
         } else {
             endy = Math.max(1, endy);
         }
 
-		LOGGER.debug("startx: " + startx + "; starty: " + starty + "; endx: " + endx + "; endy: " + endy
-				+ "; duration: " + duration);
+        UTILS_LOGGER.debug("startx: " + startx + "; starty: " + starty + "; endx: " + endx + "; endy: " + endy
+                + "; duration: " + duration);
 
-		PointOption<?> startPoint = PointOption.point(startx, starty);
-		PointOption<?> endPoint = PointOption.point(endx, endy);
-		WaitOptions waitOptions = WaitOptions.waitOptions(Duration.ofMillis(duration));
-        
-		new TouchAction((MobileDriver<?>) drv).press(startPoint).waitAction(waitOptions).moveTo(endPoint).release()
-				.perform();
+        PointOption<?> startPoint = PointOption.point(startx, starty);
+        PointOption<?> endPoint = PointOption.point(endx, endy);
+        WaitOptions waitOptions = WaitOptions.waitOptions(Duration.ofMillis(duration));
 
-        LOGGER.debug("Finished swipe...");
+        new TouchAction((MobileDriver<?>) drv).press(startPoint).waitAction(waitOptions).moveTo(endPoint).release()
+                .perform();
+
+        UTILS_LOGGER.debug("Finished swipe...");
     }
 
     /**
@@ -441,7 +445,7 @@ public interface IMobileUtils extends IDriverPool {
 
     /**
      * swipeInContainer
-     * 
+     *
      * @param container ExtendedWebElement
      * @param direction Direction
      * @param count int
@@ -457,20 +461,20 @@ public interface IMobileUtils extends IDriverPool {
 
         Point elementLocation = null;
         Dimension elementDimensions = null;
-        
-		if (container == null) {
-			// whole screen/driver is a container!
-			WebDriver driver = getDriver();
-			elementLocation = new Point(0, 0); // initial left corner for that case
 
-			elementDimensions = helper.performIgnoreException(() -> driver.manage().window().getSize());
-		} else {
-			if (container.isElementNotPresent(5)) {
-				Assert.fail("Cannot swipe! Impossible to find element " + container.getName());
-			}
-			elementLocation = container.getLocation();
-			elementDimensions = helper.performIgnoreException(() -> container.getSize());
-		}
+        if (container == null) {
+            // whole screen/driver is a container!
+            WebDriver driver = castDriver();
+            elementLocation = new Point(0, 0); // initial left corner for that case
+
+            elementDimensions = driver.manage().window().getSize();
+        } else {
+            if (container.isElementNotPresent(5)) {
+                Assert.fail("Cannot swipe! Impossible to find element " + container.getName());
+            }
+            elementLocation = container.getLocation();
+            elementDimensions = container.getSize();
+        }
 
         double minCoefficient = 0.3;
         double maxCoefficient = 0.6;
@@ -480,7 +484,7 @@ public interface IMobileUtils extends IDriverPool {
         if (os.equalsIgnoreCase(SpecialKeywords.ANDROID)) {
             minCoefficient = 0.25;
             maxCoefficient = 0.5;
-        } else if (os.equalsIgnoreCase(SpecialKeywords.IOS) || os.equalsIgnoreCase(SpecialKeywords.MAC)) {
+        } else if (os.equalsIgnoreCase(SpecialKeywords.IOS) || os.equalsIgnoreCase(SpecialKeywords.MAC) || os.equalsIgnoreCase(SpecialKeywords.TVOS)) {
             minCoefficient = 0.25;
             maxCoefficient = 0.8;
         }
@@ -514,7 +518,7 @@ public interface IMobileUtils extends IDriverPool {
             throw new RuntimeException("Unsupported direction: " + direction);
         }
 
-        LOGGER.debug(String.format("Swipe from (X = %d; Y = %d) to (X = %d; Y = %d)", startx, starty, endx, endy));
+        UTILS_LOGGER.debug(String.format("Swipe from (X = %d; Y = %d) to (X = %d; Y = %d)", startx, starty, endx, endy));
 
         try {
             for (int i = 0; i < count; ++i) {
@@ -522,16 +526,14 @@ public interface IMobileUtils extends IDriverPool {
             }
             return true;
         } catch (Exception e) {
-            LOGGER.error(String.format("Error during Swipe from (X = %d; Y = %d) to (X = %d; Y = %d): %s", startx, starty, endx, endy, e));
+            UTILS_LOGGER.error(String.format("Error during Swipe from (X = %d; Y = %d) to (X = %d; Y = %d): %s", startx, starty, endx, endy, e));
         }
         return false;
     }
 
-
-
     /**
      * Swipe up several times
-     * 
+     *
      * @param times int
      * @param duration int
      */
@@ -543,17 +545,17 @@ public interface IMobileUtils extends IDriverPool {
 
     /**
      * Swipe up
-     * 
+     *
      * @param duration int
      */
     default public void swipeUp(final int duration) {
-        LOGGER.info("Swipe up will be executed.");
+        UTILS_LOGGER.info("Swipe up will be executed.");
         swipeInContainer(null, Direction.UP, duration);
     }
 
     /**
      * Swipe down several times
-     * 
+     *
      * @param times int
      * @param duration int
      */
@@ -565,17 +567,17 @@ public interface IMobileUtils extends IDriverPool {
 
     /**
      * Swipe down
-     * 
+     *
      * @param duration int
      */
     default public void swipeDown(final int duration) {
-        LOGGER.info("Swipe down will be executed.");
+        UTILS_LOGGER.info("Swipe down will be executed.");
         swipeInContainer(null, Direction.DOWN, duration);
     }
 
     /**
      * Swipe left several times
-     * 
+     *
      * @param times int
      * @param duration int
      */
@@ -587,30 +589,30 @@ public interface IMobileUtils extends IDriverPool {
 
     /**
      * Swipe left
-     * 
+     *
      * @param duration int
      */
     default public void swipeLeft(final int duration) {
-        LOGGER.info("Swipe left will be executed.");
+        UTILS_LOGGER.info("Swipe left will be executed.");
         swipeLeft(null, duration);
     }
 
-	/**
-	 * Swipe left in container
-	 * 
-	 * @param container
-	 *            ExtendedWebElement
-	 * @param duration
-	 *            int
-	 */
+    /**
+     * Swipe left in container
+     *
+     * @param container
+     *            ExtendedWebElement
+     * @param duration
+     *            int
+     */
     default public void swipeLeft(ExtendedWebElement container, final int duration) {
-        LOGGER.info("Swipe left will be executed.");
+        UTILS_LOGGER.info("Swipe left will be executed.");
         swipeInContainer(container, Direction.LEFT, duration);
     }
 
     /**
      * Swipe right several times
-     * 
+     *
      * @param times int
      * @param duration int
      */
@@ -622,24 +624,24 @@ public interface IMobileUtils extends IDriverPool {
 
     /**
      * Swipe right
-     * 
+     *
      * @param duration int
      */
     default public void swipeRight(final int duration) {
-        LOGGER.info("Swipe right will be executed.");
+        UTILS_LOGGER.info("Swipe right will be executed.");
         swipeRight(null, duration);
     }
 
-	/**
-	 * Swipe right in container
-	 * 
-	 * @param container
-	 *            ExtendedWebElement
-	 * @param duration
-	 *            int
-	 */
+    /**
+     * Swipe right in container
+     *
+     * @param container
+     *            ExtendedWebElement
+     * @param duration
+     *            int
+     */
     default public void swipeRight(ExtendedWebElement container, final int duration) {
-        LOGGER.info("Swipe right will be executed.");
+        UTILS_LOGGER.info("Swipe right will be executed.");
         swipeInContainer(container, Direction.RIGHT, duration);
     }
 
@@ -653,7 +655,7 @@ public interface IMobileUtils extends IDriverPool {
 
     /**
      * set Android Device Default TimeZone And Language based on config or to GMT and En
-     * 
+     *
      * @param returnAppFocus - if true store actual Focused apk and activity, than restore after setting Timezone and Language.
      */
     default public void setDeviceDefaultTimeZoneAndLanguage(boolean returnAppFocus) {
@@ -675,14 +677,14 @@ public interface IMobileUtils extends IDriverPool {
                 DeviceTimeZone.TimeFormat timeFormat = DeviceTimeZone.TimeFormat.parse(deviceTimeFormat);
                 DeviceTimeZone.TimeZoneFormat timeZone = DeviceTimeZone.TimeZoneFormat.parse(deviceTimezone);
 
-                LOGGER.info("Set device timezone to " + timeZone.toString());
-                LOGGER.info("Set device time format to " + timeFormat.toString());
-                LOGGER.info("Set device language to " + deviceLanguage);
+                UTILS_LOGGER.info("Set device timezone to " + timeZone.toString());
+                UTILS_LOGGER.info("Set device time format to " + timeFormat.toString());
+                UTILS_LOGGER.info("Set device language to " + deviceLanguage);
 
                 boolean timeZoneChanged = androidService.setDeviceTimeZone(timeZone.getTimeZone(), timeZone.getSettingsTZ(), timeFormat);
                 boolean languageChanged = androidService.setDeviceLanguage(deviceLanguage);
 
-                LOGGER.info(String.format("Device TimeZone was changed to timeZone '%s' : %s. Device Language was changed to language '%s': %s",
+                UTILS_LOGGER.info(String.format("Device TimeZone was changed to timeZone '%s' : %s. Device Language was changed to language '%s': %s",
                         deviceTimezone,
                         timeZoneChanged, deviceLanguage, languageChanged));
 
@@ -691,34 +693,51 @@ public interface IMobileUtils extends IDriverPool {
                 }
 
             } else {
-                LOGGER.info(String.format("Current OS is %s. But we can set default TimeZone and Language only for Android.", os));
+                UTILS_LOGGER.info(String.format("Current OS is %s. But we can set default TimeZone and Language only for Android.", os));
             }
         } catch (Exception e) {
-            LOGGER.error(e);
+            UTILS_LOGGER.error(e.getMessage(), e);
         }
     }
 
-	/**
-	 * Hide keyboard if needed
-	 */
-	default public void hideKeyboard() {
-		try {
-			((MobileDriver<?>) getDriver()).hideKeyboard();
-		} catch (Exception e) {
-			if (!e.getMessage().contains("Soft keyboard not present, cannot hide keyboard")) {
-				LOGGER.error("Exception appears during hideKeyboard: " + e);
-			}
-		}
-	}
-	
-	default public void zoom(Zoom type) {
-        LOGGER.info("Zoom will be performed :" + type);
-        MobileDriver<?> driver = (MobileDriver<?>) getDriver();
-        Dimension scrSize = helper.performIgnoreException(() -> driver.manage().window().getSize());
+    /**
+     * Hide keyboard if needed
+     */
+    default public void hideKeyboard() {
+        try {
+            ((MobileDriver<?>) castDriver()).hideKeyboard();
+        } catch (Exception e) {
+            if (!e.getMessage().contains("Soft keyboard not present, cannot hide keyboard")) {
+                UTILS_LOGGER.error("Exception appears during hideKeyboard: " + e);
+            }
+        }
+    }
+
+    /**
+     * Check if keyboard is showing
+     * return false if driver is not ios or android driver
+     *
+     * @return boolean
+     */
+    default public boolean isKeyboardShown() {
+        MobileDriver<?> driver = (MobileDriver<?>) castDriver();
+        if (driver instanceof IOSDriver) {
+            return ((IOSDriver<?>) castDriver()).isKeyboardShown();
+        }
+        else if (driver instanceof AndroidDriver) {
+            return ((AndroidDriver<?>) castDriver()).isKeyboardShown();
+        }
+        return false;
+    }
+
+    default public void zoom(Zoom type) {
+        UTILS_LOGGER.info("Zoom will be performed :" + type);
+        MobileDriver<?> driver = (MobileDriver<?>) castDriver();
+        Dimension scrSize = driver.manage().window().getSize();
         int height = scrSize.getHeight();
         int width = scrSize.getWidth();
-        LOGGER.debug("Screen height : " + height);
-        LOGGER.debug("Screen width : " + width);
+        UTILS_LOGGER.debug("Screen height : " + height);
+        UTILS_LOGGER.debug("Screen width : " + width);
         Point point1 = new Point(width / 2, height / 2 - 30);
         Point point2 = new Point(width / 2, height / 10 * 3);
         Point point3 = new Point(width / 2, height / 2 + 30);
@@ -734,30 +753,102 @@ public interface IMobileUtils extends IDriverPool {
             break;
         }
     }
-    
+
     default public void zoom(int startx1, int starty1, int endx1, int endy1, int startx2, int starty2, int endx2, int endy2, int duration) {
-        LOGGER.debug(String.format(
+        UTILS_LOGGER.debug(String.format(
                 "Zoom action will be performed with parameters : startX1 : %s ;  startY1: %s ; endX1: %s ; endY1: %s; startX2 : %s ;  startY2: %s ; endX2: %s ; endY2: %s",
                 startx1, starty1, endx1, endy1, startx2, starty2, endx2, endy2));
-        MobileDriver<?> driver = (MobileDriver<?>) getDriver();
+        MobileDriver<?> driver = (MobileDriver<?>) castDriver();
         try {
             MultiTouchAction multiTouch = new MultiTouchAction(driver);
+            @SuppressWarnings("rawtypes")
             TouchAction<?> tAction0 = new TouchAction(driver);
+            @SuppressWarnings("rawtypes")
             TouchAction<?> tAction1 = new TouchAction(driver);
-            
+
             PointOption<?> startPoint1 = PointOption.point(startx1, starty1);
-            PointOption<?> endPoint1 = PointOption.point(endx1 , endy1);
+            PointOption<?> endPoint1 = PointOption.point(endx1, endy1);
             PointOption<?> startPoint2 = PointOption.point(startx2, starty2);
-            PointOption<?> endPoint2 = PointOption.point(endx2 , endy2);
+            PointOption<?> endPoint2 = PointOption.point(endx2, endy2);
             WaitOptions waitOptions = WaitOptions.waitOptions(Duration.ofMillis(duration));
 
             tAction0.press(startPoint1).waitAction(waitOptions).moveTo(endPoint1).release();
             tAction1.press(startPoint2).waitAction(waitOptions).moveTo(endPoint2).release();
             multiTouch.add(tAction0).add(tAction1);
-            multiTouch.perform(); 
-            LOGGER.info("Zoom has been performed");
+            multiTouch.perform();
+            UTILS_LOGGER.info("Zoom has been performed");
         } catch (Exception e) {
-            LOGGER.error("Error during zooming", e);
+            UTILS_LOGGER.error("Error during zooming", e);
         }
     }
+
+    /**
+     * Check if started driver/application is running in foreground
+     *
+     * @return boolean
+     */
+    default public boolean isAppRunning() {
+        String bundleId = "";
+        String os = getDevice().getOs();
+        // get bundleId or appId of the application started by driver
+        if (os.equalsIgnoreCase(SpecialKeywords.ANDROID)) {
+            bundleId = ((AppiumDriver<?>) castDriver()).getSessionDetail(SpecialKeywords.APP_PACKAGE).toString();
+        } else if (os.equalsIgnoreCase(SpecialKeywords.IOS) || os.equalsIgnoreCase(SpecialKeywords.MAC) || os.equalsIgnoreCase(SpecialKeywords.TVOS)) {
+            bundleId = ((AppiumDriver<?>) castDriver()).getSessionDetail(SpecialKeywords.BUNDLE_ID).toString();
+        }
+
+        return isAppRunning(bundleId);
+    }
+
+    /**
+     * Check running in foreground application by bundleId or appId
+     *
+     * @param bundleId the bundle identifier for iOS (or appPackage for Android) of the app to query the state of.
+     * @return boolean
+     */
+    default public boolean isAppRunning(String bundleId) {
+        ApplicationState actualApplicationState = ((MobileDriver<?>) castDriver()).queryAppState(bundleId);
+        return ApplicationState.RUNNING_IN_FOREGROUND.equals(actualApplicationState);
+    }
+
+    /**
+     * Terminate running driver/application
+     */
+    default public void terminateApp() {
+        String bundleId = "";
+        String os = getDevice().getOs();
+
+        // get bundleId or appId of the application started by driver
+        if (os.equalsIgnoreCase(SpecialKeywords.ANDROID)) {
+            bundleId = ((AppiumDriver<?>) castDriver()).getSessionDetail(SpecialKeywords.APP_PACKAGE).toString();
+        } else if (os.equalsIgnoreCase(SpecialKeywords.IOS) || os.equalsIgnoreCase(SpecialKeywords.MAC) || os.equalsIgnoreCase(SpecialKeywords.TVOS)) {
+            bundleId = ((AppiumDriver<?>) castDriver()).getSessionDetail(SpecialKeywords.BUNDLE_ID).toString();
+        }
+
+        terminateApp(bundleId);
+    }
+
+    /**
+     * Terminate running application by bundleId or appId
+     *
+     * @param bundleId the bundle identifier for iOS (or appPackage for Android) of the app to terminate.
+     */
+    default public void terminateApp(String bundleId) {
+        ((MobileDriver<?>) castDriver()).terminateApp(bundleId);
+    }
+
+    /**
+     * Cast Carina driver to WebDriver removing all extra listeners (try to avoid direct operations via WebDriver as it doesn't support logging etc)
+     *
+     * @return WebDriver
+     */
+    default public WebDriver castDriver() {
+        WebDriver drv = getDriver();
+        if (drv instanceof EventFiringWebDriver) {
+            drv = ((EventFiringWebDriver) drv).getWrappedDriver();
+        }
+
+        return drv;
+    }
+
 }

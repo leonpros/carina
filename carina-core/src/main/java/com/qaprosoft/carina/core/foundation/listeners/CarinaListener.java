@@ -19,11 +19,15 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -32,6 +36,8 @@ import org.apache.log4j.Category;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.apache.log4j.PropertyConfigurator;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.support.events.EventFiringWebDriver;
 import org.testng.Assert;
 import org.testng.ISuite;
 import org.testng.ISuiteListener;
@@ -52,7 +58,6 @@ import com.qaprosoft.amazon.AmazonS3Manager;
 import com.qaprosoft.carina.browsermobproxy.ProxyPool;
 import com.qaprosoft.carina.core.foundation.commons.SpecialKeywords;
 import com.qaprosoft.carina.core.foundation.jira.Jira;
-import com.qaprosoft.carina.core.foundation.report.Artifacts;
 import com.qaprosoft.carina.core.foundation.report.ReportContext;
 import com.qaprosoft.carina.core.foundation.report.TestResultItem;
 import com.qaprosoft.carina.core.foundation.report.TestResultType;
@@ -65,6 +70,7 @@ import com.qaprosoft.carina.core.foundation.utils.DateUtils;
 import com.qaprosoft.carina.core.foundation.utils.JsonUtils;
 import com.qaprosoft.carina.core.foundation.utils.Messager;
 import com.qaprosoft.carina.core.foundation.utils.R;
+import com.qaprosoft.carina.core.foundation.utils.async.AsyncOperation;
 import com.qaprosoft.carina.core.foundation.utils.metadata.MetadataCollector;
 import com.qaprosoft.carina.core.foundation.utils.metadata.model.ElementsInfo;
 import com.qaprosoft.carina.core.foundation.utils.resources.I18N;
@@ -72,11 +78,15 @@ import com.qaprosoft.carina.core.foundation.utils.resources.L10N;
 import com.qaprosoft.carina.core.foundation.utils.resources.L10Nparser;
 import com.qaprosoft.carina.core.foundation.webdriver.CarinaDriver;
 import com.qaprosoft.carina.core.foundation.webdriver.IDriverPool;
+import com.qaprosoft.carina.core.foundation.webdriver.Screenshot;
 import com.qaprosoft.carina.core.foundation.webdriver.TestPhase;
 import com.qaprosoft.carina.core.foundation.webdriver.TestPhase.Phase;
 import com.qaprosoft.carina.core.foundation.webdriver.core.capability.CapabilitiesLoader;
 import com.qaprosoft.carina.core.foundation.webdriver.device.Device;
-import com.qaprosoft.hockeyapp.HockeyAppManager;
+import com.qaprosoft.appcenter.AppCenterManager;
+import com.qaprosoft.zafira.client.ZafiraSingleton;
+import com.qaprosoft.zafira.listener.ZafiraEventRegistrar;
+import com.qaprosoft.zafira.models.dto.TestRunType;
 
 /*
  * CarinaListener - base carin-core TestNG Listener.
@@ -84,7 +94,7 @@ import com.qaprosoft.hockeyapp.HockeyAppManager;
  * @author Vadim Delendik
  */
 public class CarinaListener extends AbstractTestListener implements ISuiteListener {
-    protected static final Logger LOGGER = Logger.getLogger(CarinaListener.class);
+    private static final Logger LOGGER = Logger.getLogger(CarinaListener.class);
 
     protected static final long EXPLICIT_TIMEOUT = Configuration.getLong(Parameter.EXPLICIT_TIMEOUT);
 
@@ -98,7 +108,9 @@ public class CarinaListener extends AbstractTestListener implements ISuiteListen
             // Add shutdown hook
             Runtime.getRuntime().addShutdownHook(new ShutdownHook());
             // Set log4j properties
-            PropertyConfigurator.configure(ClassLoader.getSystemResource("log4j.properties"));
+            URL log4jUrl = ClassLoader.getSystemResource("carina-log4j.properties");
+            LOGGER.debug("carina-log4j.properties: " + log4jUrl);
+            PropertyConfigurator.configure(log4jUrl);
 
             LOGGER.info(Configuration.asString());
             // Configuration.validateConfiguration();
@@ -164,6 +176,12 @@ public class CarinaListener extends AbstractTestListener implements ISuiteListen
                 while (allLoggers.hasMoreElements()) {
                     Category tmpLogger = (Category) allLoggers.nextElement();
                     LOGGER.debug("loggerName: " + tmpLogger.getName());
+                    if ("log4j.logger.org.apache.http.wire".equals(tmpLogger.getName())) {
+                        // update this logger to be able to analyse ZafiraClient calls 
+                        LOGGER.info("Updaged logger level for '" + tmpLogger.getName() + "' to "
+                                + Configuration.get(Parameter.CORE_LOG_LEVEL));
+                        tmpLogger.setLevel(Level.toLevel(Configuration.get(Parameter.CORE_LOG_LEVEL)));
+                    }
                     for (String coreLogPackage : coreLogPackages) {
                         if (tmpLogger.getName().contains(coreLogPackage.trim())) {
                             LOGGER.info("Updaged logger level for '" + tmpLogger.getName() + "' to "
@@ -201,9 +219,33 @@ public class CarinaListener extends AbstractTestListener implements ISuiteListen
         LOGGER.debug("Updated data_provider_thread_count=" + suite.getXmlSuite().getDataProviderThreadCount());
 
         onHealthCheck(suite);
+        
+        LOGGER.info("CARINA_CORE_VERSION: " + getCarinaVersion());
     }
 
-    @Override
+	private String getCarinaVersion() {
+
+		String carinaVersion = "";
+		try {
+			Class<CarinaListener> theClass = CarinaListener.class;
+
+			String classPath = theClass.getResource(theClass.getSimpleName() + ".class").toString();
+			LOGGER.debug("Class: " + classPath);
+
+			Pattern pattern = Pattern.compile(".*\\/(.*)\\/.*!");
+			Matcher matcher = pattern.matcher(classPath);
+
+			if (matcher.find()) {
+				carinaVersion = matcher.group(1);
+			}
+		} catch (Exception e) {
+			LOGGER.debug(e);
+		}
+
+		return carinaVersion;
+	}
+
+	@Override
     public void onStart(ITestContext context) {
         LOGGER.debug("CarinaListener->OnTestStart(context): " + context.getName());
         super.onStart(context);
@@ -238,6 +280,14 @@ public class CarinaListener extends AbstractTestListener implements ISuiteListen
             TestPhase.setActivePhase(Phase.AFTER_SUITE);
         }
     }
+    
+    @Override
+    public void onConfigurationFailure(ITestResult result) {
+        String errorMessage = getFailureReason(result);
+        takeScreenshot(result, "CONFIGURATION FAILED - " + errorMessage);
+
+        super.onConfigurationFailure(result);
+    }
 
     @Override
     public void onTestStart(ITestResult result) {
@@ -260,12 +310,18 @@ public class CarinaListener extends AbstractTestListener implements ISuiteListen
 
     @Override
     public void onTestFailure(ITestResult result) {
+        String errorMessage = getFailureReason(result);
+        takeScreenshot(result, "TEST FAILED - " + errorMessage);
+        
         onTestFinish(result);
         super.onTestFailure(result);
     }
 
     @Override
     public void onTestSkipped(ITestResult result) {
+        String errorMessage = getFailureReason(result);
+        takeScreenshot(result, "TEST FAILED - " + errorMessage);
+        
         onTestFinish(result);
         super.onTestSkipped(result);
     }
@@ -293,7 +349,17 @@ public class CarinaListener extends AbstractTestListener implements ISuiteListen
 
     private void onTestFinish(ITestResult result) {
         try {
-            if (automaticDriversCleanup && !hasDependencies(result)) {
+            // clear all kind of temporary properties
+            R.CONFIG.clearTestProperties();
+            R.TESTDATA.clearTestProperties();
+            R.DATABASE.clearTestProperties();
+            R.EMAIL.clearTestProperties();
+            R.REPORT.clearTestProperties();
+            R.ZAFIRA.clearTestProperties();
+            
+            LOGGER.debug("Test result is : " + result.getStatus());
+            // result status == 2 means failure, status == 3 means skip. We need to quit driver anyway for failure and skip
+            if ((automaticDriversCleanup && !hasDependencies(result)) || result.getStatus() == 2 || result.getStatus() == 3) {
                 quitDrivers(Phase.BEFORE_METHOD, Phase.METHOD);
             }
 
@@ -324,8 +390,6 @@ public class CarinaListener extends AbstractTestListener implements ISuiteListen
 
             // clear jira tickets to be sure that next test is not affected.
             Jira.clearTickets();
-
-            Artifacts.clearArtifacts();
 
         } catch (Exception e) {
             LOGGER.error("Exception in CarinaListener->onTestFinish!", e);
@@ -411,7 +475,8 @@ public class CarinaListener extends AbstractTestListener implements ISuiteListen
         } catch (Exception e) {
             LOGGER.error("Exception in CarinaListener->onFinish(ISuite suite)", e);
         } finally {
-            // do nothing
+            // wait until all async  operations (i.e. artifacts uploading) are finished
+            AsyncOperation.waitUntilFinish(30);
         }
     }
     
@@ -438,12 +503,7 @@ public class CarinaListener extends AbstractTestListener implements ISuiteListen
     }
 
     protected String getBrowser() {
-        String browser = "";
-        if (!Configuration.get(Parameter.BROWSER).isEmpty()) {
-            browser = Configuration.get(Parameter.BROWSER);
-        }
-
-        return browser;
+        return Configuration.getBrowser();
     }
 
     protected String getTitle(XmlSuite suite) {
@@ -561,11 +621,11 @@ public class CarinaListener extends AbstractTestListener implements ISuiteListen
         }
 
         try {
-            if (!Configuration.get(Parameter.HOCKEYAPP_TOKEN).isEmpty()) {
-                updateHockeyAppPath();
+            if (!Configuration.get(Parameter.APPCENTER_TOKEN).isEmpty()) {
+                updateAppCenterAppPath();
             }
         } catch (Exception e) {
-            LOGGER.error("HockeyApp manager exception detected!", e);
+            LOGGER.error("AppCenter manager exception detected!", e);
         }
 
     }
@@ -573,25 +633,25 @@ public class CarinaListener extends AbstractTestListener implements ISuiteListen
     /**
      * Method to update MOBILE_APP path in case if apk is located in Hockey App.
      */
-    private static void updateHockeyAppPath() {
-        // hockeyapp://appName/platformName/buildType/version
-        Pattern HOCKEYAPP_PATTERN = Pattern.compile(
-                "hockeyapp:\\/\\/([a-zA-Z-0-9][^\\/]*)\\/([a-zA-Z-0-9][^\\/]*)\\/([a-zA-Z-0-9][^\\/]*)\\/([a-zA-Z-0-9][^\\/]*)");
+    private static void updateAppCenterAppPath() {
+        // appcenter://appName/platformName/buildType/version
+        Pattern APPCENTER_PATTERN = Pattern.compile(
+                "appcenter:\\/\\/([a-zA-Z-0-9][^\\/]*)\\/([a-zA-Z-0-9][^\\/]*)\\/([a-zA-Z-0-9][^\\/]*)\\/([a-zA-Z-0-9][^\\/]*)");
         String mobileAppPath = Configuration.getMobileApp();
-        Matcher matcher = HOCKEYAPP_PATTERN.matcher(mobileAppPath);
+        Matcher matcher = APPCENTER_PATTERN.matcher(mobileAppPath);
 
-        LOGGER.info("Analyzing if mobile_app is located on HockeyApp...");
+        LOGGER.info("Analyzing if mobile_app is located on AppCenter...");
         if (matcher.find()) {
-            LOGGER.info("app artifact is located on HockeyApp...");
+            LOGGER.info("app artifact is located on AppCenter...");
             String appName = matcher.group(1);
             String platformName = matcher.group(2);
             String buildType = matcher.group(3);
             String version = matcher.group(4);
 
-            String hockeyAppLocalStorage = Configuration.get(Parameter.HOCKEYAPP_LOCAL_STORAGE);
-            // download file from HockeyApp to local storage
+            String appCenterAppLocalStorage = Configuration.get(Parameter.APPCENTER_LOCAL_STORAGE);
+            // download file from AppCenter to local storage
 
-            File file = HockeyAppManager.getInstance().getBuild(hockeyAppLocalStorage, appName, platformName, buildType,
+            File file = AppCenterManager.getInstance().getBuild(appCenterAppLocalStorage, appName, platformName, buildType,
                     version);
 
             Configuration.setMobileApp(file.getAbsolutePath());
@@ -761,6 +821,28 @@ public class CarinaListener extends AbstractTestListener implements ISuiteListen
         }
         return includes;
     }
+    
+    private String takeScreenshot(ITestResult result, String msg) {
+        String screenId = "";
+
+        ConcurrentHashMap<String, CarinaDriver> drivers = getDrivers();
+
+        try {
+            for (Map.Entry<String, CarinaDriver> entry : drivers.entrySet()) {
+                String driverName = entry.getKey();
+                WebDriver drv = entry.getValue().getDriver();
+    
+                if (drv instanceof EventFiringWebDriver) {
+                    drv = ((EventFiringWebDriver) drv).getWrappedDriver();
+                }
+                
+                screenId = Screenshot.captureFailure(drv, driverName + ": " + msg); // in case of failure
+            }
+        } catch (Throwable thr) {
+            LOGGER.error("Failure detected on screenshot generation after failure: ", thr);
+        }
+        return screenId;
+    }
 
     public static class ShutdownHook extends Thread {
 
@@ -796,8 +878,22 @@ public class CarinaListener extends AbstractTestListener implements ISuiteListen
         }
 
         private void quitAllDriversOnHook() {
-            // as it is shutdown hook just try to quit all existing drivers one by one
+            // #810 add zafira testrun abort as part of shutdown hook
+            if (ZafiraSingleton.INSTANCE.isRunning()) {
+                LOGGER.debug("Zafira test run is still in progress. trying to abort...");
+                try {
+                    Optional<TestRunType> testRun = ZafiraEventRegistrar.getTestRun();
+                    if (testRun != null) {
+                        LOGGER.debug("detected testrun id to abort: " + testRun.get().getId());
+                        ZafiraSingleton.INSTANCE.getClient().abortTestRun(testRun.get().getId());
+                        LOGGER.debug("aborted testrun");
+                    }
+                } catch (NoSuchElementException e) {
+                    LOGGER.debug("No Zafira testrun detected.");
+                }
+            }
 
+            // as it is shutdown hook just try to quit all existing drivers one by one
             for (CarinaDriver carinaDriver : driversPool) {
                 // it is expected that all drivers are killed in appropriate AfterMethod/Class/Suite blocks
                 String name = carinaDriver.getName();

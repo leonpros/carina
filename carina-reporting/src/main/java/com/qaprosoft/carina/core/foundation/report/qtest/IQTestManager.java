@@ -31,7 +31,7 @@ import com.qaprosoft.carina.core.foundation.commons.SpecialKeywords;
 import com.qaprosoft.carina.core.foundation.report.testrail.ITestCases;
 
 public interface IQTestManager extends ITestCases {
-    Logger LOGGER = Logger.getLogger(IQTestManager.class);
+    static final Logger QTEST_LOGGER = Logger.getLogger(IQTestManager.class);
 
     default Set<String> getQTestCasesUuid(ITestResult result) {
         Set<String> testCases = new HashSet<String>();
@@ -52,7 +52,6 @@ public interface IQTestManager extends ITestCases {
 
             testCases.addAll(dataProviderIds);
 
-            LOGGER.debug(dataProviderIds);
         }
 
 
@@ -84,7 +83,7 @@ public interface IQTestManager extends ITestCases {
                         for (String tcase : testCaseList) {
                             String uuid = tcase;
                             testCases.add(uuid);
-                            LOGGER.debug("qTest test case uuid '" + uuid + "' is registered.");
+                            QTEST_LOGGER.debug("qTest test case uuid '" + uuid + "' is registered.");
                         }
 
                     }
@@ -101,14 +100,14 @@ public interface IQTestManager extends ITestCases {
                             for (String tcase : testCaseList) {
                                 String uuid = tcase;
                                 testCases.add(uuid);
-                                LOGGER.debug("qTest test case uuid '" + uuid + "' is registered.");
+                                QTEST_LOGGER.debug("qTest test case uuid '" + uuid + "' is registered.");
                             }
                         }
                     }
                 }
             }
         } catch (ClassNotFoundException e) {
-            LOGGER.error(e);
+            QTEST_LOGGER.error(e.getMessage(), e);
         }
 
         // append cases id values from ITestCases map (custom TestNG provider)

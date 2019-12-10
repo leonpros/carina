@@ -36,7 +36,6 @@ import com.qaprosoft.carina.core.foundation.webdriver.decorator.ExtendedWebEleme
 import io.appium.java_client.MobileBy;
 import io.appium.java_client.TouchAction;
 import io.appium.java_client.android.AndroidDriver;
-import io.appium.java_client.android.AndroidKeyCode;
 import io.appium.java_client.android.nativekey.AndroidKey;
 import io.appium.java_client.android.nativekey.KeyEvent;
 import io.appium.java_client.android.nativekey.KeyEventFlag;
@@ -44,14 +43,14 @@ import io.appium.java_client.touch.offset.PointOption;
 import io.appium.java_client.windows.PressesKeyCode;
 
 /**
- * Useful Android utilities. For usage: import
- * com.qaprosoft.carina.core.foundation.utils.android.AndroidUtils;
- *
+ * @deprecated use 
+ * 			{@link com.qaprosoft.carina.core.foundation.utils.android.IAndroidUtils} 
+ * 			instead.
  */
 public class AndroidUtils extends MobileUtils {
 
 	//TODO: review carefully and remove duplicates and migrate completely to fluent waits
-    protected static final Logger LOGGER = Logger.getLogger(AndroidUtils.class);
+    private static final Logger LOGGER = Logger.getLogger(AndroidUtils.class);
     private static final int SCROLL_MAX_SEARCH_SWIPES = 55;
     private static final long SCROLL_TIMEOUT = 300;
 
@@ -186,10 +185,7 @@ public class AndroidUtils extends MobileUtils {
         MobileUtils.hideKeyboard();
     }
     
-    @SuppressWarnings("deprecation")
-	public static void pressBack() {
-        ((AndroidDriver<?>) getDriver()).pressKeyCode(AndroidKeyCode.BACK);
-    }
+
 
     /**
      * Pressing "search" key of Android keyboard by coordinates.

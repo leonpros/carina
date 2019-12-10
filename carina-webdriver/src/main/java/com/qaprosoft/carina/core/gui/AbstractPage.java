@@ -19,7 +19,6 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 
-import org.apache.log4j.Logger;
 import org.openqa.selenium.WebDriver;
 
 import com.itextpdf.text.Document;
@@ -41,7 +40,6 @@ import com.qaprosoft.carina.core.foundation.webdriver.Screenshot;
  * @author Alex Khursevich
  */
 public abstract class AbstractPage extends AbstractUIObject implements ICustomTypePageFactory {
-    protected static final Logger LOGGER = Logger.getLogger(AbstractPage.class);
     
 	protected String pageURL = getUrl();
 
@@ -102,7 +100,7 @@ public abstract class AbstractPage extends AbstractUIObject implements ICustomTy
 
         String fullPdfPath = artifactsFolder.getAbsolutePath() + "/" + pdfName;
         // TODO: test this implementation and change back to capture if necessary
-        Image image = Image.getInstance(testRootDir.getAbsolutePath() + "/" + Screenshot.captureFailure(driver, ""));
+        Image image = Image.getInstance(testRootDir.getAbsolutePath() + "/" + Screenshot.captureFailure(getDriver(), ""));
         Document document = null;
         if (scaled) {
             document = new Document(PageSize.A4, 10, 10, 10, 10);
